@@ -56,23 +56,21 @@ var tcCommand = &cobra.Command{
 		defer netns.Close()
 
 		_ = netns.Do(func(_ ns.NetNS) error {
+
+			// egress
 			l, err := netlink.LinkByName(eth0)
-			fmt.Println("-------------zk 09-----------\n")
 			if err != nil {
-				fmt.Println("-------------zk-----------%s\n", err)
+				fmt.Printf("get link by name %s in the container namespace %s\n", eth0, err)
 			}
 
-			if err != nil {
-				fmt.Println("-------------zk-----------%s\n", err)
-			}
 			qdiscs, err := safeQdiscList(l)
 			if err != nil {
-				fmt.Println("-------------zk list qdisc-----------%s\n", err)
+				fmt.Printf("get current qdisc in the container namespace of %s\n", err)
 			}
 			var htb *netlink.Htb
 			var hasHtb = false
 			for _, qdisc := range qdiscs {
-				fmt.Println("qdisc is %s\n", qdisc)
+				fmt.Printf("current qdisc is %s\n", qdisc)
 
 				h, isHTB := qdisc.(*netlink.Htb)
 				if isHTB {
@@ -81,7 +79,6 @@ var tcCommand = &cobra.Command{
 					break
 				}
 			}
-			fmt.Println("-------------zk 1-----------\n")
 
 			if !hasHtb {
 				// qdisc
@@ -107,7 +104,7 @@ var tcCommand = &cobra.Command{
 				Handle:    netlink.MakeHandle(1, 1),
 			}
 			htbclassattrs1 := netlink.HtbClassAttrs{
-				Rate:    10000000000,
+				Rate:    egress,
 				Cbuffer: 0,
 			}
 			class1 := netlink.NewHtbClass(classattrs1, htbclassattrs1)
@@ -117,27 +114,27 @@ var tcCommand = &cobra.Command{
 
 			// htb child class
 			// tc class add dev lo parent 1:0 classid 1:5 htb rate 125kbps ceil 250kbps prio 0
-			classattrs2 := netlink.ClassAttrs{
-				LinkIndex: l.Attrs().Index,
-				Parent:    netlink.MakeHandle(1, 0),
-				Handle:    netlink.MakeHandle(1, 5),
-				//Handle: *linuxNetworkIO.ClassID,
-			}
-			htbclassattrs2 := netlink.HtbClassAttrs{
-				Rate:    egress,
-				Cbuffer: uint32(egress) * 2,
-			}
-			class2 := netlink.NewHtbClass(classattrs2, htbclassattrs2)
-			if err := netlink.ClassAdd(class2); err != nil {
-				fmt.Println("Class add error", err)
-			}
+			//classattrs2 := netlink.ClassAttrs{
+			//	LinkIndex: l.Attrs().Index,
+			//	Parent:    netlink.MakeHandle(1, 0),
+			//	Handle:    netlink.MakeHandle(1, 5),
+			//	//Handle: *linuxNetworkIO.ClassID,
+			//}
+			//htbclassattrs2 := netlink.HtbClassAttrs{
+			//	Rate:    egress,
+			//	Cbuffer: uint32(egress) * 2,
+			//}
+			//class2 := netlink.NewHtbClass(classattrs2, htbclassattrs2)
+			//if err := netlink.ClassAdd(class2); err != nil {
+			//	fmt.Println("Class add error", err)
+			//}
 
 			// filter add
 			// tc filter add dev lo parent 1:0 prio 0 protocol all handle 5 fw flowid 1:5
 			filterattrs := netlink.FilterAttrs{
 				LinkIndex: l.Attrs().Index,
 				Parent:    netlink.MakeHandle(1, 0),
-				Handle:    netlink.MakeHandle(1, 5),
+				Handle:    netlink.MakeHandle(1, 1),
 				Priority:  49152,
 				Protocol:  unix.ETH_P_IP,
 			}
@@ -147,13 +144,13 @@ var tcCommand = &cobra.Command{
 				"cgroup",
 			}
 
-			if err != nil {
-				fmt.Println("failed to create NewFw(). Reason:%s", err)
-			}
-
 			if err := netlink.FilterAdd(filter); err != nil {
 				fmt.Println("failed to add filter. Reason:%s", err)
 			}
+
+			// ingress
+
+			// set egress for ifb
 
 			return nil
 		})
